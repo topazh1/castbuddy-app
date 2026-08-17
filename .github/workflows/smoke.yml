@@ -1,0 +1,52 @@
+# End-to-end smoke test from the public internet: is the app link serving,
+# is the short link redirecting, and is the AI-voice API reachable with CORS
+# open for this site's origin? Runs after every Pages deploy and on demand.
+name: Live smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: App link serves the site
+        run: |
+          body=$(curl -sS --fail --max-time 30 https://topazh1.github.io/castbuddy-app/)
+          echo "$body" | grep -q '<title>CastBuddy</title>' || { echo 'FAIL: page title missing'; exit 1; }
+          echo "OK: app page serves with CastBuddy title ($(echo "$body" | wc -c) bytes)"
+
+      - name: Supabase short link redirects to the app
+        run: |
+          location=$(curl -sS -o /dev/null -D - --max-time 30 https://dnbtpzguoudkjqvlmoau.supabase.co/functions/v1/app | tr -d '\r' | grep -i '^location:' | awk '{print $2}')
+          echo "redirect -> $location"
+          echo "$location" | grep -q 'topazh1.github.io/castbuddy-app' || { echo 'FAIL: redirect target wrong'; exit 1; }
+          echo "OK: short link redirects to the app"
+
+      - name: AI-voice API answers preflight for the app origin
+        run: |
+          headers=$(curl -sS -o /dev/null -D - --max-time 30 -X OPTIONS \
+            -H 'Origin: https://topazh1.github.io' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: authorization,apikey,content-type' \
+            https://dnbtpzguoudkjqvlmoau.supabase.co/functions/v1/ai-proxy/engines | tr -d '\r')
+          echo "$headers"
+          echo "$headers" | grep -qi 'access-control-allow-origin' || { echo 'FAIL: no CORS on preflight'; exit 1; }
+          echo "$headers" | grep -qi 'access-control-allow-headers:.*authorization' || { echo 'FAIL: authorization header not allowed'; exit 1; }
+          echo "OK: preflight open for the app origin"
+
+      - name: AI-voice API is alive and CORS-open on real responses
+        run: |
+          out=$(curl -sS -o /tmp/body -w '%{http_code}' -D /tmp/headers --max-time 30 \
+            -H 'Origin: https://topazh1.github.io' \
+            https://dnbtpzguoudkjqvlmoau.supabase.co/functions/v1/ai-proxy/engines)
+          tr -d '\r' < /tmp/headers
+          echo "status=$out body=$(cat /tmp/body | head -c 300)"
+          case "$out" in
+            200|400|401|403) : ;;
+            *) echo "FAIL: unexpected status $out (function down?)"; exit 1 ;;
+          esac
+          grep -qi 'access-control-allow-origin' /tmp/headers || { echo 'FAIL: no CORS on response'; exit 1; }
+          echo "OK: function alive (status $out, auth-gated as designed) with CORS headers"
