@@ -1,0 +1,35 @@
+# Temporary API probe (manual only): discover Dicta's live nakdan endpoint
+# and response shape before wiring it into the app. Removed once integrated.
+name: Dicta probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: nakdan-2-0 api
+        continue-on-error: true
+        run: |
+          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-2-0.loadbalancer.dicta.org.il/api' \
+            -H 'Content-Type: application/json' \
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב\nהרכבת נתקעה בדרך"}' | head -c 1500; echo
+      - name: nakdan-5-1 api
+        continue-on-error: true
+        run: |
+          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-5-1.loadbalancer.dicta.org.il/api' \
+            -H 'Content-Type: application/json' \
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
+      - name: nakdan main site api
+        continue-on-error: true
+        run: |
+          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan.dicta.org.il/api' \
+            -H 'Content-Type: application/json' \
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
+      - name: nakdan-for-morph variant
+        continue-on-error: true
+        run: |
+          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-4-0.loadbalancer.dicta.org.il/addnikud' \
+            -H 'Content-Type: application/json' \
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
