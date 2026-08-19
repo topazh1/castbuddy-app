@@ -1,5 +1,5 @@
-# Temporary API probe (manual only): discover Dicta's live nakdan endpoint
-# and response shape before wiring it into the app. Removed once integrated.
+# Temporary API probe (manual only): check whether Dicta's nakdan endpoints
+# answer browser CORS (preflight + response headers). Removed once integrated.
 name: Dicta probe
 
 on:
@@ -9,27 +9,31 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: nakdan-2-0 api
+      - name: preflight nakdan-5-1
         continue-on-error: true
         run: |
-          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-2-0.loadbalancer.dicta.org.il/api' \
-            -H 'Content-Type: application/json' \
-            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב\nהרכבת נתקעה בדרך"}' | head -c 1500; echo
-      - name: nakdan-5-1 api
+          curl -sS -m 20 -o /dev/null -D - -w 'STATUS=%{http_code}\n' -X OPTIONS 'https://nakdan-5-1.loadbalancer.dicta.org.il/api' \
+            -H 'Origin: https://topazh1.github.io' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type'
+      - name: post with origin nakdan-5-1
         continue-on-error: true
         run: |
-          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-5-1.loadbalancer.dicta.org.il/api' \
+          curl -sS -m 20 -o /dev/null -D - -w 'STATUS=%{http_code}\n' -X POST 'https://nakdan-5-1.loadbalancer.dicta.org.il/api' \
+            -H 'Origin: https://topazh1.github.io' \
             -H 'Content-Type: application/json' \
-            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
-      - name: nakdan main site api
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}'
+      - name: preflight nakdan-2-0
         continue-on-error: true
         run: |
-          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan.dicta.org.il/api' \
-            -H 'Content-Type: application/json' \
-            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
-      - name: nakdan-for-morph variant
+          curl -sS -m 20 -o /dev/null -D - -w 'STATUS=%{http_code}\n' -X OPTIONS 'https://nakdan-2-0.loadbalancer.dicta.org.il/api' \
+            -H 'Origin: https://topazh1.github.io' \
+            -H 'Access-Control-Request-Method: POST' \
+            -H 'Access-Control-Request-Headers: content-type'
+      - name: post with origin nakdan-2-0
         continue-on-error: true
         run: |
-          curl -sS -m 20 -w '\nSTATUS=%{http_code}\n' -X POST 'https://nakdan-4-0.loadbalancer.dicta.org.il/addnikud' \
+          curl -sS -m 20 -o /dev/null -D - -w 'STATUS=%{http_code}\n' -X POST 'https://nakdan-2-0.loadbalancer.dicta.org.il/api' \
+            -H 'Origin: https://topazh1.github.io' \
             -H 'Content-Type: application/json' \
-            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}' | head -c 1500; echo
+            --data '{"task":"nakdan","genre":"modern","data":"איחרת שוב"}'
