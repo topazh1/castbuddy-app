@@ -90,6 +90,20 @@ jobs:
             echo 'A paused project fails here first — check the Supabase dashboard.'
             exit 1
           fi
+          # The same read with the key as a query parameter and no headers at
+          # all. This is the escape hatch: a plain GET URL that any dumb uptime
+          # pinger can call, for the day GitHub's scheduler is not enough on its
+          # own. Checked here so it cannot rot silently while nobody is using it.
+          # (The key is public by design — it already ships inside the app's
+          # JavaScript — and row-level security is what actually guards the
+          # data, which the empty answer above re-proves on every run.)
+          plain=$(curl -sS -o /tmp/plain -w '%{http_code}' --max-time 30 \
+            "https://dnbtpzguoudkjqvlmoau.supabase.co/rest/v1/scripts?select=id&limit=1&apikey=$anon")
+          echo "headerless URL: status=$plain body=$(head -c 120 /tmp/plain)"
+          if [ "$plain" != '200' ]; then
+            echo 'FAIL: the no-headers keep-alive URL stopped working.'
+            exit 1
+          fi
           echo 'OK: database answered every query; project is awake and RLS is holding'
 
       - name: AI-voice API answers preflight for the app origin
