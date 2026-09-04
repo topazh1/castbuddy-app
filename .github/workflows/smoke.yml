@@ -45,24 +45,42 @@ jobs:
           echo "OK: short link redirects to the app"
 
       # The step that both proves the database is up AND counts as the activity
-      # that keeps it up. Edge Functions run on separate infrastructure, so the
-      # two function checks above do not touch Postgres — only this does.
-      # Reading `scripts` with the anon key returns an empty array: row-level
-      # security hides every row from an unauthenticated caller, which is the
-      # point. An empty 200 is a real query answered by a real database.
+      # that keeps it up. Supabase's pausing policy is specific about what it
+      # measures — "user database activity", and "typically a few user requests
+      # to the database each day" is enough to stay awake. Note *database*:
+      # Edge Functions run on separate infrastructure, so neither function check
+      # in this file touches Postgres. Only these requests do.
+      #
+      # Hence a few queries rather than one, across all three tables — still
+      # trivial traffic, but comfortably on the right side of "a few" instead of
+      # sitting exactly on the line of the smallest thing that might count.
+      #
+      # Every read comes back as an empty array: row-level security hides every
+      # row from an unauthenticated caller. Real queries, real database, no data.
       - name: Database answers (and stays awake)
         run: |
           anon='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRuYnRwemd1b3Vka2pxdmxtb2F1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwMjkzMTcsImV4cCI6MjEwMTYwNTMxN30.kISyxdLzw_j__8bCdiDkA8e9oCqbOOXcnNDAetrKLYM'
-          code=$(curl -sS -o /tmp/db -w '%{http_code}' --max-time 30 \
-            -H "apikey: $anon" -H "Authorization: Bearer $anon" \
-            'https://dnbtpzguoudkjqvlmoau.supabase.co/rest/v1/scripts?select=id&limit=1')
-          echo "status=$code body=$(head -c 200 /tmp/db)"
-          if [ "$code" != '200' ]; then
-            echo "FAIL: database did not answer ($code)."
-            echo "A paused project answers here first — check the Supabase dashboard."
+          fail=0
+          for table in scripts ai_usage analysis_hints; do
+            code=$(curl -sS -o /tmp/db -w '%{http_code}' --max-time 30 \
+              -H "apikey: $anon" -H "Authorization: Bearer $anon" \
+              "https://dnbtpzguoudkjqvlmoau.supabase.co/rest/v1/$table?select=*&limit=1")
+            echo "$table: status=$code body=$(head -c 120 /tmp/db)"
+            [ "$code" = '200' ] || fail=1
+            # Row-level security is what keeps these reads safe to run from a
+            # public runner. A non-empty answer means anonymous callers can see
+            # user rows, which is a data leak and must fail the build loudly.
+            if [ "$(tr -d ' \n' < /tmp/db)" != '[]' ]; then
+              echo "FAIL: $table returned rows to an anonymous caller — RLS is not protecting it."
+              exit 1
+            fi
+          done
+          if [ "$fail" != '0' ]; then
+            echo 'FAIL: the database did not answer.'
+            echo 'A paused project fails here first — check the Supabase dashboard.'
             exit 1
           fi
-          echo 'OK: database answered; project is awake'
+          echo 'OK: database answered every query; project is awake and RLS is holding'
 
       - name: AI-voice API answers preflight for the app origin
         run: |
