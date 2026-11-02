@@ -47,6 +47,21 @@ jobs:
           echo "$body" | grep -q '<title>CastBuddy</title>' || { echo 'FAIL: page title missing'; exit 1; }
           echo "OK: app page serves with CastBuddy title ($(echo "$body" | wc -c) bytes)"
 
+      # The page alone proves little now that the app is split into chunks:
+      # a deploy that lost its assets would still serve a titled index.html.
+      - name: The app's code, offline worker and manifest serve
+        run: |
+          base=https://topazh1.github.io/castbuddy-app/
+          html=$(curl -sS --fail --max-time 30 "$base")
+          js=$(echo "$html" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+          [ -n "$js" ] || { echo 'FAIL: the page names no app script'; exit 1; }
+          for path in "$js" sw.js manifest.webmanifest; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$base$path")
+            echo "$path: $code"
+            [ "$code" = '200' ] || { echo "FAIL: $path did not serve"; exit 1; }
+          done
+          echo "OK: app script, service worker and manifest all serve"
+
       - name: Supabase short link redirects to the app
         run: |
           location=$(curl -sS -o /dev/null -D - --max-time 30 https://dnbtpzguoudkjqvlmoau.supabase.co/functions/v1/app | tr -d '\r' | grep -i '^location:' | awk '{print $2}')
