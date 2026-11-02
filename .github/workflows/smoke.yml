@@ -43,18 +43,30 @@ jobs:
     steps:
       - name: App link serves the site
         run: |
-          body=$(curl -sS --fail --max-time 30 https://topazh1.github.io/castbuddy-app/)
+          body=$(curl -sS --fail --max-time 30 https://topazh1.github.io/castbuddy-app/ | tr -d '\0')
           echo "$body" | grep -q '<title>CastBuddy</title>' || { echo 'FAIL: page title missing'; exit 1; }
           echo "OK: app page serves with CastBuddy title ($(echo "$body" | wc -c) bytes)"
 
       # The page alone proves little now that the app is split into chunks:
       # a deploy that lost its assets would still serve a titled index.html.
+      #
+      # This runs on the push itself, and GitHub Pages publishes a minute or
+      # so later — so the page is polled until it is the pushed build (its
+      # app script is named in this commit's index.html), up to ~5 minutes.
+      - uses: actions/checkout@v4
       - name: The app's code, offline worker and manifest serve
         run: |
           base=https://topazh1.github.io/castbuddy-app/
-          html=$(curl -sS --fail --max-time 30 "$base")
-          js=$(echo "$html" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
-          [ -n "$js" ] || { echo 'FAIL: the page names no app script'; exit 1; }
+          want=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' index.html | head -1)
+          [ -n "$want" ] || { echo 'FAIL: this commit names no app script'; exit 1; }
+          js=''
+          for attempt in $(seq 1 20); do
+            js=$(curl -sS --max-time 30 "$base" | grep -ao 'assets/index-[A-Za-z0-9_-]*\.js' | head -1 || true)
+            [ "$js" = "$want" ] && break
+            echo "waiting for Pages to publish $want (serving: ${js:-the previous build})"
+            sleep 15
+          done
+          [ "$js" = "$want" ] || { echo "FAIL: Pages never served $want"; exit 1; }
           for path in "$js" sw.js manifest.webmanifest; do
             code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$base$path")
             echo "$path: $code"
